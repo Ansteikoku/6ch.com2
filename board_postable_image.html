@@ -1,0 +1,157 @@
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>スレッド一覧（埋め込み用）</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 0;
+      padding: 10px;
+      background: #fff;
+    }
+    .thread {
+      border-bottom: 1px solid #ddd;
+      padding: 8px 0;
+    }
+    .thread-title {
+      font-weight: bold;
+      font-size: 16px;
+      color: #0070f3;
+      text-decoration: none;
+    }
+    .thread-meta {
+      font-size: 12px;
+      color: #666;
+    }
+    .thread-body {
+      margin-top: 4px;
+      font-size: 14px;
+      color: #333;
+    }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
+  
+
+<script defer>
+document.addEventListener("DOMContentLoaded", async () => {
+  const supabase = supabase.createClient(
+    "https://jusddwcwoccwzimnveys.supabase.co",
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp1c2Rkd2N3b2Njd3ppbW52ZXlzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIyMDE1ODAsImV4cCI6MjA2Nzc3NzU4MH0.NQXUcKkOeQ898bSyUJbPTgGTdTdotcVIKV6wTVsBPjg"
+  );
+
+  const params = new URLSearchParams(location.search);
+  const board = params.get("board") || "live";
+
+  const container = document.getElementById("threads");
+
+  // 投稿処理
+  document.getElementById("thread-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    
+  const title = document.getElementById("title").value.trim();
+  const imageFile = document.getElementById("image").files[0];
+  let imageUrl = null;
+
+  if (imageFile) {
+    const fileExt = imageFile.name.split('.').pop();
+    const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+    const filePath = `${board}/${fileName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("thread-images")
+      .upload(filePath, imageFile);
+
+    if (!uploadError) {
+      const { data } = supabase.storage.from("thread-images").getPublicUrl(filePath);
+      imageUrl = data.publicUrl;
+    } else {
+      alert("画像アップロード失敗");
+    }
+  }
+  
+    const body = document.getElementById("body").value.trim();
+    const name = document.getElementById("name").value.trim() || "名無しさん";
+
+    if (!title || !body) return;
+
+    const { error } = await supabase.from("threads").insert([{
+      title,
+      body,
+      name,
+      board_slug: board,
+      image_url: imageUrl,
+    }]);
+
+    if (error) {
+      alert("投稿失敗");
+    } else {
+      document.getElementById("thread-form").reset();
+      loadThreads();
+    }
+  });
+
+  async function loadThreads() {
+    container.innerHTML = "読み込み中...";
+
+    const { data, error } = await supabase
+      .from("threads")
+      .select("*, comments(count)")
+      .eq("board_slug", board)
+      .order("created_at", { ascending: false });
+
+    if (error || !data || data.length === 0) {
+      container.innerHTML = "<p>スレッドが見つかりません。</p>";
+      return;
+    }
+
+    container.innerHTML = "";
+    data.forEach(t => {
+      const commentCount = t.comments?.length || 0;
+      const div = document.createElement("div");
+      div.className = "thread";
+      div.innerHTML = `
+        <a class="thread-title" href="thread.html?id=${t.id}" target="_parent">${escapeHtml(t.title)}</a>
+        <div class="thread-meta">${escapeHtml(t.name || "名無しさん")} | ${new Date(t.created_at).toLocaleString()}（${commentCount} 件のコメント）</div>
+        <div class="thread-body">${escapeHtml(t.body)}
+        ${t.image_url ? `<div><img src="${t.image_url}" style="max-width:100%; margin-top:6px;"></div>` : ""}
+      </div>
+      `;
+      container.appendChild(div);
+    });
+  }
+
+  function escapeHtml(str) {
+    return str
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  loadThreads();
+});
+</script>
+
+
+</head>
+<body>
+  
+  <h2>新規スレッド投稿</h2>
+  <form id="thread-form">
+    <input type="text" id="title" placeholder="タイトル" required style="width:100%; margin:4px 0;" />
+    <textarea id="body" placeholder="本文" rows="4" required style="width:100%; margin:4px 0;"></textarea>
+    <input type="text" id="name" placeholder="名前（省略可）" style="width:100%; margin:4px 0;" />
+    
+  <input type="file" id="image" accept="image/*" style="margin:4px 0;" />
+  <button type="submit" style="width:100%; padding:6px; margin-top:4px;">投稿</button>
+  
+  </form>
+  <hr />
+  <div id="threads">読み込み中...</div>
+  
+</body>
+</html>
